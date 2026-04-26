@@ -44,6 +44,7 @@ export default function RootLayout() {
             name="confirmed/[id]"
             options={{ title: "Confirmed", headerBackVisible: false }}
           />
+          <Stack.Screen name="(merchant)" options={{ headerShown: false }} />
           <Stack.Screen name="scanner" options={{ title: "Scanner" }} />
           <Stack.Screen
             name="business/[id]"
@@ -57,6 +58,15 @@ export default function RootLayout() {
             name="auth/merchant"
             options={{ headerShown: false }}
           />
+          <Stack.Screen name="merchant-screens/setup" options={{ title: "Business Profile" }} />
+          <Stack.Screen name="merchant-screens/locations" options={{ title: "Locations" }} />
+          <Stack.Screen name="merchant-screens/items" options={{ title: "Menu Items" }} />
+          <Stack.Screen name="merchant-screens/rules" options={{ title: "Offer Rules" }} />
+          <Stack.Screen name="merchant-screens/approvals" options={{ title: "Approvals" }} />
+          <Stack.Screen name="merchant-screens/loyalty" options={{ title: "Loyalty" }} />
+          <Stack.Screen name="merchant-screens/payments" options={{ title: "Payments" }} />
+          <Stack.Screen name="merchant-screens/pos" options={{ title: "POS" }} />
+          <Stack.Screen name="merchant-screens/team" options={{ title: "Team" }} />
         </Stack>
 
         {!checked && (

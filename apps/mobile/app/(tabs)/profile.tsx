@@ -34,10 +34,24 @@ export default function ProfileScreen() {
   >("idle");
   const [pushMsg, setPushMsg] = useState<string>("");
   const [showDebug, setShowDebug] = useState(false);
+  const [isMerchant, setIsMerchant] = useState(false);
 
   const load = useCallback(async () => {
     const id = await getSessionId();
     setSid(id);
+
+    if (supabase) {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const roles = (user.user_metadata?.roles as string[]) ?? [];
+          setIsMerchant(roles.includes("merchant"));
+        }
+      } catch {
+        // non-fatal
+      }
+    }
+
     try {
       const w = await api.fetchWallet(id);
       setOrgs(w.orgs ?? []);
@@ -65,7 +79,13 @@ export default function ProfileScreen() {
       setPushMsg("You're all set. We'll ping you when offers go live nearby.");
     } else {
       setPushStatus("error");
-      setPushMsg(r.error);
+      const isFcmError =
+        r.error.includes("FirebaseApp") || r.error.includes("Firebase");
+      setPushMsg(
+        isFcmError
+          ? "Push notifications need Firebase Cloud Messaging to be configured. This will be available in the production release."
+          : r.error,
+      );
     }
   }
 
@@ -125,6 +145,28 @@ export default function ProfileScreen() {
         <Stat icon="star-outline" label="Points" value={totalPoints} />
         <Stat icon="ribbon-outline" label="Stamps" value={totalStamps} />
       </View>
+
+      {isMerchant && (
+        <Card>
+          <Pressable
+            style={styles.switchBtn}
+            onPress={() => router.replace("/(merchant)")}
+          >
+            <Ionicons name="storefront" size={20} color={colors.accent} />
+            <View style={{ flex: 1 }}>
+              <Text style={styles.switchTitle}>Switch to merchant view</Text>
+              <Text style={styles.switchBody}>
+                Manage your business, scan codes, and view offers
+              </Text>
+            </View>
+            <Ionicons
+              name="chevron-forward"
+              size={18}
+              color={colors.inkSofter}
+            />
+          </Pressable>
+        </Card>
+      )}
 
       <Card>
         <View style={styles.cardHeader}>
@@ -384,4 +426,11 @@ const styles = StyleSheet.create({
   },
   debugValue: { color: colors.ink, fontSize: 13 },
   mono: { fontFamily: "Menlo", fontSize: 11, color: colors.inkSoft },
+  switchBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space(3),
+  },
+  switchTitle: { color: colors.ink, fontWeight: "700", fontSize: 15 },
+  switchBody: { color: colors.inkSoft, fontSize: 13 },
 });

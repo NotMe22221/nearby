@@ -25,6 +25,33 @@ export default function CustomerAuth() {
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
 
+  async function addRole(role: string) {
+    if (!supabase) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const roles: string[] = (user.user_metadata?.roles as string[]) ?? [];
+      if (!roles.includes(role)) {
+        await supabase.auth.updateUser({
+          data: { roles: [...roles, role] },
+        });
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function trySignIn(): Promise<boolean> {
+    if (!supabase) return false;
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) return false;
+    await addRole("customer");
+    return true;
+  }
+
   async function submit() {
     if (!supabase) {
       Alert.alert("Config error", "Supabase is not configured.");
@@ -41,12 +68,41 @@ export default function CustomerAuth() {
           email,
           password,
         });
-        if (error) throw error;
+        if (error) {
+          if (error.message?.toLowerCase().includes("email not confirmed")) {
+            Alert.alert(
+              "Email not confirmed",
+              "Check your inbox and click the confirmation link, then try signing in again.",
+            );
+          } else {
+            throw error;
+          }
+          return;
+        }
+        await addRole("customer");
         router.replace("/(tabs)");
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        if (data.session) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { roles: ["customer"] } },
+        });
+        if (error) {
+          if (error.message?.toLowerCase().includes("already registered")) {
+            const signedIn = await trySignIn();
+            if (signedIn) {
+              router.replace("/(tabs)");
+            } else {
+              Alert.alert(
+                "Account exists",
+                "An account with this email already exists but the password doesn't match. Switch to Sign in and use the original password.",
+              );
+            }
+          } else {
+            throw error;
+          }
+        } else if (data.session) {
+          await addRole("customer");
           router.replace("/(tabs)");
         } else {
           Alert.alert(
@@ -78,7 +134,12 @@ export default function CustomerAuth() {
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        <Pressable onPress={() => router.back()} style={styles.back}>
+        <Pressable
+          onPress={() =>
+            router.canGoBack() ? router.back() : router.replace("/onboarding")
+          }
+          style={styles.back}
+        >
           <Ionicons name="arrow-back" size={20} color={colors.ink} />
           <Text style={styles.backText}>Back</Text>
         </Pressable>

@@ -2,7 +2,6 @@ import { useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
-  Linking,
   Platform,
   Pressable,
   ScrollView,
@@ -15,7 +14,6 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { supabase } from "@/lib/supabase";
-import { apiBaseUrl } from "@/lib/config";
 import { colors, radius, space } from "@/lib/theme";
 
 type Mode = "sign-in" | "sign-up";
@@ -26,6 +24,33 @@ export default function MerchantAuth() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [busy, setBusy] = useState(false);
+
+  async function addRole(role: string) {
+    if (!supabase) return;
+    try {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      const roles: string[] = (user.user_metadata?.roles as string[]) ?? [];
+      if (!roles.includes(role)) {
+        await supabase.auth.updateUser({
+          data: { roles: [...roles, role] },
+        });
+      }
+    } catch {
+      // non-fatal
+    }
+  }
+
+  async function trySignIn(): Promise<boolean> {
+    if (!supabase) return false;
+    const { error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
+    if (error) return false;
+    await addRole("merchant");
+    return true;
+  }
 
   async function submit() {
     if (!supabase) {
@@ -43,12 +68,41 @@ export default function MerchantAuth() {
           email,
           password,
         });
-        if (error) throw error;
+        if (error) {
+          if (error.message?.toLowerCase().includes("email not confirmed")) {
+            Alert.alert(
+              "Email not confirmed",
+              "Check your inbox and click the confirmation link, then try signing in again.",
+            );
+          } else {
+            throw error;
+          }
+          return;
+        }
+        await addRole("merchant");
         openDashboard();
       } else {
-        const { data, error } = await supabase.auth.signUp({ email, password });
-        if (error) throw error;
-        if (data.session) {
+        const { data, error } = await supabase.auth.signUp({
+          email,
+          password,
+          options: { data: { roles: ["merchant"] } },
+        });
+        if (error) {
+          if (error.message?.toLowerCase().includes("already registered")) {
+            const signedIn = await trySignIn();
+            if (signedIn) {
+              openDashboard();
+            } else {
+              Alert.alert(
+                "Account exists",
+                "An account with this email already exists but the password doesn't match. Switch to Sign in and use the original password.",
+              );
+            }
+          } else {
+            throw error;
+          }
+        } else if (data.session) {
+          await addRole("merchant");
           openDashboard();
         } else {
           Alert.alert(
@@ -69,17 +123,7 @@ export default function MerchantAuth() {
   }
 
   function openDashboard() {
-    Alert.alert(
-      "Signed in",
-      "Open the merchant dashboard in your browser to manage offers and view redemptions.",
-      [
-        {
-          text: "Open dashboard",
-          onPress: () => Linking.openURL(`${apiBaseUrl}/merchant`),
-        },
-        { text: "Go to app", onPress: () => router.replace("/(tabs)") },
-      ],
-    );
+    router.replace("/(merchant)");
   }
 
   return (
@@ -94,7 +138,12 @@ export default function MerchantAuth() {
         ]}
         keyboardShouldPersistTaps="handled"
       >
-        <Pressable onPress={() => router.back()} style={styles.back}>
+        <Pressable
+          onPress={() =>
+            router.canGoBack() ? router.back() : router.replace("/onboarding")
+          }
+          style={styles.back}
+        >
           <Ionicons name="arrow-back" size={20} color={colors.ink} />
           <Text style={styles.backText}>Back</Text>
         </Pressable>
@@ -181,9 +230,8 @@ export default function MerchantAuth() {
         <View style={styles.hint}>
           <Ionicons name="globe-outline" size={16} color={colors.inkSofter} />
           <Text style={styles.hintText}>
-            After signing in, use the merchant dashboard at{" "}
-            <Text style={styles.hintMono}>{apiBaseUrl}/merchant</Text> to manage
-            your business.
+            After signing in, you'll see your merchant dashboard with scanner,
+            offers, and stats right in the app.
           </Text>
         </View>
 
@@ -259,7 +307,6 @@ const styles = StyleSheet.create({
     padding: space(3),
   },
   hintText: { color: colors.inkSoft, fontSize: 12, lineHeight: 18, flex: 1 },
-  hintMono: { fontFamily: "Menlo", color: colors.ink, fontSize: 12 },
   guestLink: { alignItems: "center", paddingVertical: space(2) },
   guestLinkText: { color: colors.inkSofter, fontWeight: "600", fontSize: 14 },
 });
