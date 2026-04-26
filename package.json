@@ -1,0 +1,19 @@
+{
+  "name": "city-wallet",
+  "version": "0.1.0",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm run dev --workspace apps/web",
+    "build": "npm run build --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "mobile": "npm run start --workspace apps/mobile"
+  },
+  "dependencies": {
+    "ajv": "^8.20.0"
+  }
+}

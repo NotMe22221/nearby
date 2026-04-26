@@ -1,0 +1,54 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: light;
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  @apply bg-ink-50 text-ink-900 antialiased;
+  font-family: theme("fontFamily.sans");
+}
+
+/* Mobile-first defaults */
+.app-shell {
+  @apply mx-auto max-w-md min-h-screen px-4 pb-24 pt-4;
+}
+
+.app-shell-wide {
+  @apply mx-auto max-w-5xl min-h-screen px-4 pb-12 pt-6 md:px-8;
+}
+
+.btn {
+  @apply inline-flex items-center justify-center rounded-xl px-4 py-3 text-sm font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+}
+
+.btn-primary {
+  @apply btn bg-accent-500 text-white hover:bg-accent-600 active:bg-accent-700;
+}
+
+.btn-secondary {
+  @apply btn bg-white text-ink-900 ring-1 ring-ink-200 hover:bg-ink-100;
+}
+
+.btn-ghost {
+  @apply btn text-ink-900 hover:bg-ink-100;
+}
+
+.input {
+  @apply w-full rounded-xl bg-white px-4 py-3 text-sm ring-1 ring-ink-200 focus:outline-none focus:ring-2 focus:ring-accent-500;
+}
+
+.label {
+  @apply mb-1 block text-xs font-medium uppercase tracking-wide text-ink-900/70;
+}
+
+.card {
+  @apply rounded-xl2 bg-white shadow-card ring-1 ring-ink-200/60;
+}

@@ -1,0 +1,80 @@
+{
+  "expo": {
+    "name": "Nearby",
+    "slug": "nearby",
+    "scheme": "nearby",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "automatic",
+    "icon": "./assets/icon.png",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#2563EB"
+    },
+    "platforms": [
+      "ios",
+      "android"
+    ],
+    "newArchEnabled": true,
+    "ios": {
+      "bundleIdentifier": "com.citywallet.app",
+      "supportsTablet": true,
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Nearby uses your location to show offers near you.",
+        "NSCameraUsageDescription": "Merchants use the camera to scan customer QR codes."
+      }
+    },
+    "android": {
+      "package": "com.citywallet.app",
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#2563EB"
+      },
+      "permissions": [
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "VIBRATE"
+      ]
+    },
+    "web": {
+      "bundler": "metro",
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-router",
+      [
+        "expo-location",
+        {
+          "locationAlwaysAndWhenInUsePermission": "Nearby uses your location to show offers near you."
+        }
+      ],
+      [
+        "expo-camera",
+        {
+          "cameraPermission": "Nearby uses the camera to scan offer QR codes."
+        }
+      ],
+      [
+        "@stripe/stripe-react-native",
+        {
+          "merchantIdentifier": "merchant.com.citywallet.app",
+          "enableGooglePay": true
+        }
+      ],
+      "expo-secure-store"
+    ],
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "apiBaseUrl": "http://10.0.0.10:3000",
+      "supabaseUrl": "https://kljabbvlkcnnnnslijfg.supabase.co",
+      "supabaseAnonKey": "sb_publishable_OPxmyQpDOvNQZrF-OO8AxA_igX1rPH5",
+      "stripePublishableKey": "pk_live_51QmjF5RutEh7PyS1zd2qIT3Um0ZNtn1SYCq1sKLBumbG1qOiqFh9BIK8rONkHIlldJ0IsILfUJ3wlJtM2qwVfcWt00onuG9vAa",
+      "googlePlacesApiKey": "AIzaSyD2BOWaKp7Bl72egN5Bf_HQWsI-Uz38X1Y",
+      "resendApiKey": "re_GHRdAq5W_FYz5nPKmYGWsvMY1oTqUqaKc"
+    }
+  }
+}
