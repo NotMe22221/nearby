@@ -35,7 +35,19 @@
         "ACCESS_COARSE_LOCATION",
         "ACCESS_FINE_LOCATION",
         "CAMERA",
-        "VIBRATE"
+        "VIBRATE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO",
+        "ACCESS_COARSE_LOCATION",
+        "ACCESS_FINE_LOCATION",
+        "CAMERA",
+        "VIBRATE",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.CAMERA",
+        "android.permission.RECORD_AUDIO"
       ]
     },
     "web": {
@@ -74,7 +86,16 @@
       "supabaseAnonKey": "sb_publishable_OPxmyQpDOvNQZrF-OO8AxA_igX1rPH5",
       "stripePublishableKey": "pk_live_51QmjF5RutEh7PyS1zd2qIT3Um0ZNtn1SYCq1sKLBumbG1qOiqFh9BIK8rONkHIlldJ0IsILfUJ3wlJtM2qwVfcWt00onuG9vAa",
       "googlePlacesApiKey": "AIzaSyD2BOWaKp7Bl72egN5Bf_HQWsI-Uz38X1Y",
-      "resendApiKey": "re_GHRdAq5W_FYz5nPKmYGWsvMY1oTqUqaKc"
+      "resendApiKey": "re_GHRdAq5W_FYz5nPKmYGWsvMY1oTqUqaKc",
+      "eas": {
+        "projectId": "ad3990cd-6cab-4d3d-879c-eb09e4525bba"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/ad3990cd-6cab-4d3d-879c-eb09e4525bba"
     }
   }
 }
