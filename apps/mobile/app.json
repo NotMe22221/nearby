@@ -32,21 +32,10 @@
         "backgroundColor": "#2563EB"
       },
       "permissions": [
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "CAMERA",
-        "VIBRATE",
         "android.permission.ACCESS_COARSE_LOCATION",
         "android.permission.ACCESS_FINE_LOCATION",
         "android.permission.CAMERA",
-        "android.permission.RECORD_AUDIO",
-        "ACCESS_COARSE_LOCATION",
-        "ACCESS_FINE_LOCATION",
-        "CAMERA",
-        "VIBRATE",
-        "android.permission.ACCESS_COARSE_LOCATION",
-        "android.permission.ACCESS_FINE_LOCATION",
-        "android.permission.CAMERA",
+        "android.permission.VIBRATE",
         "android.permission.RECORD_AUDIO"
       ]
     },
@@ -94,14 +83,15 @@
       "googlePlacesApiKey": "REPLACE_WITH_GOOGLE_PLACES_API_KEY",
       "resendApiKey": "REPLACE_WITH_RESEND_API_KEY",
       "eas": {
-        "projectId": "ad3990cd-6cab-4d3d-879c-eb09e4525bba"
+        "projectId": "572253f7-c6dd-434a-ba77-3ef5ba1879a9"
       }
     },
     "runtimeVersion": {
       "policy": "appVersion"
     },
     "updates": {
-      "url": "https://u.expo.dev/ad3990cd-6cab-4d3d-879c-eb09e4525bba"
-    }
+      "url": "https://u.expo.dev/572253f7-c6dd-434a-ba77-3ef5ba1879a9"
+    },
+    "owner": "webdevthree"
   }
 }
