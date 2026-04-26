@@ -67,7 +67,7 @@ export default function ClaimModal({
         offerHeadline,
       );
 
-      const code = result.ok ? result.code : "------";
+      const code = result.code;
 
       await saveClaim({
         businessName,
@@ -82,14 +82,12 @@ export default function ClaimModal({
 
       Alert.alert(
         "Offer claimed!",
-        `Your "${offerHeadline}" offer at ${businessName} has been reserved.${
-          result.ok
-            ? ` Your code is ${code}.${
-                isLoggedIn
-                  ? ""
-                  : " Check your email for details."
-              }`
-            : " Your code is saved in your wallet."
+        `Your "${offerHeadline}" offer at ${businessName} has been reserved. Your code is ${code}.${
+          result.emailSent
+            ? (isLoggedIn ? "" : " Check your email for details.")
+            : result.error
+              ? " Email could not be sent; your code is in Wallet."
+              : ""
         }`,
       );
     } catch {

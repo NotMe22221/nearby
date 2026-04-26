@@ -14,6 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
+import { resolveOrganizationId } from "@/lib/merchantOrg";
 import { colors, radius, space } from "@/lib/theme";
 
 type Item = { id: string; name: string; base_price: number; max_discount_pct: number; offer_eligible: boolean };
@@ -35,9 +36,9 @@ export default function ItemsScreen() {
     if (!supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data: mem } = await supabase.from("memberships").select("organization_id").eq("user_id", user.id).limit(1);
-    if (!mem?.length) { setLoading(false); return; }
-    const { data: locs } = await supabase.from("locations").select("id").eq("organization_id", mem[0].organization_id).order("created_at", { ascending: true }).limit(1);
+    const orgId = await resolveOrganizationId(supabase);
+    if (!orgId) { setLoading(false); return; }
+    const { data: locs } = await supabase.from("locations").select("id").eq("organization_id", orgId).order("created_at", { ascending: true }).limit(1);
     if (!locs?.length) { setLoading(false); return; }
     const lid = locs[0].id;
     setLocationId(lid);

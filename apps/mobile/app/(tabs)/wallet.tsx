@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useRef, useState } from "react";
+import { useFocusEffect } from "expo-router";
 import {
   ActivityIndicator,
   Alert,
@@ -30,6 +31,7 @@ export default function WalletScreen() {
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const firstWalletLoad = useRef(true);
 
   const load = useCallback(async () => {
     setError(null);
@@ -45,13 +47,18 @@ export default function WalletScreen() {
     setClaims(localClaims);
   }, []);
 
-  useEffect(() => {
-    (async () => {
-      setLoading(true);
-      await load();
-      setLoading(false);
-    })();
-  }, [load]);
+  useFocusEffect(
+    useCallback(() => {
+      (async () => {
+        if (firstWalletLoad.current) {
+          setLoading(true);
+          firstWalletLoad.current = false;
+        }
+        await load();
+        setLoading(false);
+      })();
+    }, [load]),
+  );
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
@@ -345,7 +352,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
     fontWeight: "800",
     fontFamily: Platform.OS === "ios" ? "Menlo" : "monospace",
-    letterSpacing: 2,
+    letterSpacing: 0.5,
   },
   claimFooter: {
     flexDirection: "row",

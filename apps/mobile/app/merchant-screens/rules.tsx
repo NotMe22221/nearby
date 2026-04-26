@@ -15,6 +15,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
+import { resolveOrganizationId } from "@/lib/merchantOrg";
 import { colors, radius, space } from "@/lib/theme";
 
 type Rule = { id: string; name: string; discount_cap_pct: number; max_redemptions: number; time_window_start: string | null; time_window_end: string | null; active: boolean; status: string; item_ids: string[]; created_at: string };
@@ -44,9 +45,9 @@ export default function RulesScreen() {
     if (!supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data: mem } = await supabase.from("memberships").select("organization_id").eq("user_id", user.id).limit(1);
-    if (!mem?.length) { setLoading(false); return; }
-    const { data: locs } = await supabase.from("locations").select("id").eq("organization_id", mem[0].organization_id).order("created_at", { ascending: true }).limit(1);
+    const orgId = await resolveOrganizationId(supabase);
+    if (!orgId) { setLoading(false); return; }
+    const { data: locs } = await supabase.from("locations").select("id").eq("organization_id", orgId).order("created_at", { ascending: true }).limit(1);
     if (!locs?.length) { setLoading(false); return; }
     const lid = locs[0].id;
     setLocationId(lid);
@@ -105,6 +106,66 @@ export default function RulesScreen() {
     load();
   }
 
+  async function approveAndPublish(rule: Rule) {
+    if (!supabase) return;
+    const client = supabase;
+    Alert.alert(
+      "Approve & Publish",
+      `Approve "${rule.name}" and publish a live offer now?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Approve Only",
+          onPress: async () => {
+            await client.from("offer_rules").update({ status: "approved" }).eq("id", rule.id);
+            Alert.alert("Approved", "Rule approved. You can publish offers from the Offers tab.");
+            load();
+          },
+        },
+        {
+          text: "Approve & Publish",
+          style: "default",
+          onPress: async () => {
+            await client.from("offer_rules").update({ status: "approved" }).eq("id", rule.id);
+            try {
+              const { data, error } = await client.rpc("generate_offer_from_rule", { p_rule_id: rule.id });
+              if (error) { Alert.alert("Error", error.message); load(); return; }
+              Alert.alert("Published!", `Offer is live! Code: ${data?.redemption_code ?? "N/A"}`);
+            } catch (e: any) {
+              Alert.alert("Error", e.message);
+            }
+            load();
+          },
+        },
+      ],
+    );
+  }
+
+  async function publishNow(rule: Rule) {
+    if (!supabase) return;
+    const client = supabase;
+    Alert.alert(
+      "Publish Now",
+      `Generate a live offer from "${rule.name}"?`,
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Publish",
+          onPress: async () => {
+            try {
+              const { data, error } = await client.rpc("generate_offer_from_rule", { p_rule_id: rule.id });
+              if (error) { Alert.alert("Error", error.message); return; }
+              Alert.alert("Published!", `Offer is live! Code: ${data?.redemption_code ?? "N/A"}`);
+            } catch (e: any) {
+              Alert.alert("Error", e.message);
+            }
+            load();
+          },
+        },
+      ],
+    );
+  }
+
   if (loading) return <View style={s.center}><ActivityIndicator size="large" color={colors.accent} /></View>;
   if (!locationId) return <View style={s.center}><Text style={s.empty}>Create a location first.</Text></View>;
 
@@ -126,11 +187,24 @@ export default function RulesScreen() {
               </View>
               <Text style={s.ruleMeta}>{rule.discount_cap_pct}% off · Max {rule.max_redemptions} redemptions</Text>
             </View>
-            {rule.status === "draft" && (
-              <Pressable onPress={() => submitForApproval(rule.id)} style={s.submitBtn} hitSlop={4}>
-                <Text style={s.submitBtnText}>Submit</Text>
-              </Pressable>
-            )}
+            <View style={s.actionCol}>
+              {rule.status === "draft" && (
+                <Pressable onPress={() => submitForApproval(rule.id)} style={s.submitBtn} hitSlop={4}>
+                  <Text style={s.submitBtnText}>Submit</Text>
+                </Pressable>
+              )}
+              {rule.status === "pending" && (
+                <Pressable onPress={() => approveAndPublish(rule)} style={s.approveBtn} hitSlop={4}>
+                  <Text style={s.approveBtnText}>Approve</Text>
+                </Pressable>
+              )}
+              {rule.status === "approved" && (
+                <Pressable onPress={() => publishNow(rule)} style={s.publishBtn} hitSlop={4}>
+                  <Ionicons name="megaphone-outline" size={14} color="#fff" />
+                  <Text style={s.publishBtnText}>Publish</Text>
+                </Pressable>
+              )}
+            </View>
           </Pressable>
         )}
       />
@@ -190,8 +264,13 @@ const s = StyleSheet.create({
   ruleMeta: { color: colors.inkSoft, fontSize: 13, marginTop: 2 },
   badge: { paddingHorizontal: space(2), paddingVertical: 2, borderRadius: radius.pill },
   badgeText: { color: "#fff", fontSize: 11, fontWeight: "700", textTransform: "uppercase" },
+  actionCol: { gap: space(1.5), alignItems: "flex-end" },
   submitBtn: { backgroundColor: colors.accentSoft, borderRadius: radius.pill, paddingHorizontal: space(3), paddingVertical: space(1.5) },
   submitBtnText: { color: colors.accent, fontWeight: "700", fontSize: 12 },
+  approveBtn: { backgroundColor: "#DCFCE7", borderRadius: radius.pill, paddingHorizontal: space(3), paddingVertical: space(1.5) },
+  approveBtnText: { color: colors.green, fontWeight: "700", fontSize: 12 },
+  publishBtn: { flexDirection: "row", alignItems: "center", gap: 4, backgroundColor: colors.accent, borderRadius: radius.pill, paddingHorizontal: space(3), paddingVertical: space(1.5) },
+  publishBtnText: { color: "#fff", fontWeight: "700", fontSize: 12 },
   fab: { position: "absolute", bottom: space(6), right: space(5), width: 56, height: 56, borderRadius: 28, backgroundColor: colors.accent, alignItems: "center", justifyContent: "center", elevation: 4, shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4 },
   modalOverlay: { flex: 1, backgroundColor: "rgba(0,0,0,0.4)", justifyContent: "flex-end" },
   modal: { maxHeight: "85%", backgroundColor: "#fff", borderTopLeftRadius: radius.lg, borderTopRightRadius: radius.lg },

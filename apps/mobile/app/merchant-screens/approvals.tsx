@@ -10,6 +10,7 @@ import {
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
+import { resolveOrganizationId } from "@/lib/merchantOrg";
 import { colors, radius, space } from "@/lib/theme";
 
 type RuleRow = { id: string; name: string; discount_cap_pct: number; status: string; created_at: string; location_id: string };
@@ -26,9 +27,9 @@ export default function ApprovalsScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setUserId(user.id);
-    const { data: mem } = await supabase.from("memberships").select("organization_id").eq("user_id", user.id).limit(1);
-    if (!mem?.length) { setLoading(false); return; }
-    const { data: locs } = await supabase.from("locations").select("id").eq("organization_id", mem[0].organization_id);
+    const orgId = await resolveOrganizationId(supabase);
+    if (!orgId) { setLoading(false); return; }
+    const { data: locs } = await supabase.from("locations").select("id").eq("organization_id", orgId);
     if (!locs?.length) { setLoading(false); return; }
     const locIds = locs.map(l => l.id);
     const { data } = await supabase
@@ -51,7 +52,7 @@ export default function ApprovalsScreen() {
   function confirmReject(ruleId: string) {
     Alert.prompt ? Alert.prompt("Reject", "Add a note (optional):", [
       { text: "Cancel", style: "cancel" },
-      { text: "Reject", style: "destructive", onPress: (note) => reject(ruleId, note ?? "") },
+      { text: "Reject", style: "destructive", onPress: (note?: string) => { void reject(ruleId, note ?? ""); } },
     ]) : reject(ruleId, "");
   }
 

@@ -50,6 +50,7 @@ export default function RootLayout() {
             name="business/[id]"
             options={{ title: "" }}
           />
+          <Stack.Screen name="location/[id]" options={{ title: "Business" }} />
           <Stack.Screen
             name="auth/customer"
             options={{ headerShown: false }}
@@ -67,6 +68,11 @@ export default function RootLayout() {
           <Stack.Screen name="merchant-screens/payments" options={{ title: "Payments" }} />
           <Stack.Screen name="merchant-screens/pos" options={{ title: "POS" }} />
           <Stack.Screen name="merchant-screens/team" options={{ title: "Team" }} />
+          <Stack.Screen
+            name="merchant-screens/offer-claims"
+            options={{ title: "Customer sign-ups" }}
+          />
+          <Stack.Screen name="offer-claim/[id]" options={{ title: "Offer" }} />
         </Stack>
 
         {!checked && (

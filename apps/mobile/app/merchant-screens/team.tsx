@@ -13,6 +13,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
+import { resolveOrganizationId } from "@/lib/merchantOrg";
 import { colors, radius, space } from "@/lib/theme";
 
 type Member = { id: string; user_id: string; role: string; email?: string };
@@ -40,11 +41,16 @@ export default function TeamScreen() {
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
     setMyUserId(user.id);
-    const { data: mem } = await supabase.from("memberships").select("organization_id, role").eq("user_id", user.id).limit(1);
-    if (!mem?.length) { setLoading(false); return; }
-    const oid = mem[0].organization_id;
+    const oid = await resolveOrganizationId(supabase);
+    if (!oid) { setLoading(false); return; }
     setOrgId(oid);
-    setMyRole(mem[0].role);
+    const { data: myMemRows } = await supabase
+      .from("memberships")
+      .select("role")
+      .eq("user_id", user.id)
+      .eq("organization_id", oid)
+      .limit(1);
+    setMyRole((myMemRows?.[0] as { role: string } | undefined)?.role ?? "");
     const { data: org } = await supabase.from("organizations").select("name").eq("id", oid).single();
     if (org) { setOrgName(org.name); setNewOrgName(org.name); }
     const { data: allMem } = await supabase.from("memberships").select("id, user_id, role").eq("organization_id", oid);

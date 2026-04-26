@@ -21,6 +21,17 @@ export type NearbyOffer = Offer & {
   stripe_enabled: boolean;
 };
 
+/** Every registered location in range — shown even when not in a slow window (no offer yet). */
+export type NearbyMerchantListItem = {
+  id: string;
+  organization_id: string;
+  name: string;
+  address: string;
+  distance_km: number;
+  cover_image_url: string | null;
+  in_slow_window: boolean;
+};
+
 export async function GET(req: Request) {
   const { searchParams } = new URL(req.url);
   const lat = parseFloat(searchParams.get("lat") ?? "");
@@ -45,13 +56,23 @@ export async function GET(req: Request) {
     return NextResponse.json({ error: nearbyErr.message }, { status: 500 });
   }
   const locations = (nearby as NearbyLocationRow[]) ?? [];
-
   const now = new Date();
+
+  const merchants: NearbyMerchantListItem[] = locations.map((l) => ({
+    id: l.id,
+    organization_id: l.organization_id,
+    name: l.name,
+    address: l.address,
+    distance_km: l.distance_km,
+    cover_image_url: l.cover_image_url ?? null,
+    in_slow_window: findActiveSlowWindow(l.slow_hours ?? [], now) !== null,
+  }));
+
   const eligible = locations.filter(
     (l) => findActiveSlowWindow(l.slow_hours ?? [], now) !== null,
   );
   if (eligible.length === 0) {
-    return NextResponse.json({ offers: [] });
+    return NextResponse.json({ offers: [], merchants });
   }
 
   const locationIds = eligible.map((l) => l.id);
@@ -142,5 +163,5 @@ export async function GET(req: Request) {
   const open = results.filter((o) => o.redemptions_count < o.max_redemptions);
   open.sort((a, b) => a.distance_km - b.distance_km);
 
-  return NextResponse.json({ offers: open });
+  return NextResponse.json({ offers: open, merchants });
 }

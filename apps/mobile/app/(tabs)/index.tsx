@@ -7,6 +7,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   View,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
@@ -14,23 +15,60 @@ import * as Location from "expo-location";
 import { router } from "expo-router";
 import {
   type Place,
+  type PlaceCategoryId,
+  PLACE_CATEGORY_CHIPS,
   searchNearbyBusinesses,
+  placeMatchesSearchQuery,
+  googleTypesForCategory,
   formatType,
   generateOffer,
   distanceMiles,
   getPlacePhotoUrl,
 } from "@/lib/places";
+import { supabase } from "@/lib/supabase";
 import { colors, radius, space } from "@/lib/theme";
 
 type Coords = { lat: number; lng: number };
+
+type NearbyOffer = {
+  id: string;
+  headline: string;
+  discount_pct: number;
+  business_name: string;
+  business_address: string;
+  expires_at: string;
+  redemption_code: string;
+  distance_mi: number | null;
+  location_id: string;
+};
+
+/** Merchant-created businesses on Nearby (Supabase) */
+type AppBusiness = {
+  id: string;
+  name: string;
+  address: string;
+  distance_mi: number | null;
+  cover_image_url: string | null;
+  organization_id: string;
+};
 
 export default function NearbyScreen() {
   const [coords, setCoords] = useState<Coords | null>(null);
   const [permError, setPermError] = useState<string | null>(null);
   const [places, setPlaces] = useState<Place[]>([]);
+  const [appBusinesses, setAppBusinesses] = useState<AppBusiness[]>([]);
+  const [nearbyOffers, setNearbyOffers] = useState<NearbyOffer[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [debouncedQuery, setDebouncedQuery] = useState("");
+  const [selectedCategory, setSelectedCategory] = useState<PlaceCategoryId>("all");
+
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedQuery(searchQuery), 300);
+    return () => clearTimeout(t);
+  }, [searchQuery]);
 
   const acquire = useCallback(async () => {
     const { status } = await Location.requestForegroundPermissionsAsync();
@@ -49,15 +87,84 @@ export default function NearbyScreen() {
     return c;
   }, []);
 
-  const load = useCallback(async (c: Coords) => {
-    setError(null);
+  const loadSupabaseFeed = useCallback(async (c: Coords) => {
+    if (!supabase) return;
     try {
-      const results = await searchNearbyBusinesses(c.lat, c.lng, 5000);
-      setPlaces(results);
-    } catch (e: unknown) {
-      setError(
-        e instanceof Error ? e.message : "Failed to load nearby places.",
+      const { data: locations, error: rpcErr } = await supabase.rpc("locations_nearby", {
+        user_lat: c.lat,
+        user_lng: c.lng,
+        radius_km: 12,
+      });
+      if (rpcErr) {
+        setAppBusinesses([]);
+        setNearbyOffers([]);
+        return;
+      }
+
+      if (!locations?.length) {
+        setAppBusinesses([]);
+        setNearbyOffers([]);
+        return;
+      }
+
+      const list = locations as {
+        id: string;
+        name: string;
+        address: string;
+        distance_km: number;
+        cover_image_url?: string | null;
+        organization_id: string;
+      }[];
+      setAppBusinesses(
+        list.map((l) => ({
+          id: l.id,
+          name: l.name,
+          address: l.address,
+          distance_mi: l.distance_km != null ? l.distance_km * 0.621371 : null,
+          cover_image_url: l.cover_image_url ?? null,
+          organization_id: l.organization_id,
+        })),
       );
+
+      const locationIds = list.map((l) => l.id);
+      const locationMap = new Map<string, (typeof list)[0]>();
+      list.forEach((l) => locationMap.set(l.id, l));
+
+      const now = new Date().toISOString();
+      const { data: offers } = await supabase
+        .from("offers")
+        .select("id, headline, discount_pct, expires_at, redemption_code, location_id, redemptions_count, max_redemptions")
+        .in("location_id", locationIds)
+        .gte("expires_at", now)
+        .order("created_at", { ascending: false })
+        .limit(20);
+
+      if (!offers?.length) {
+        setNearbyOffers([]);
+        return;
+      }
+
+      const mapped: NearbyOffer[] = offers
+        .filter((o: { redemptions_count: number; max_redemptions: number }) => o.redemptions_count < o.max_redemptions)
+        .map((o: { id: string; headline: string; discount_pct: number; expires_at: string; redemption_code: string; location_id: string; redemptions_count: number; max_redemptions: number }) => {
+          const loc = locationMap.get(o.location_id);
+          const distKm = loc?.distance_km ?? null;
+          return {
+            id: o.id,
+            headline: o.headline,
+            discount_pct: o.discount_pct,
+            business_name: loc?.name ?? "Local Business",
+            business_address: loc?.address ?? "",
+            expires_at: o.expires_at,
+            redemption_code: o.redemption_code,
+            distance_mi: distKm != null ? distKm * 0.621371 : null,
+            location_id: o.location_id,
+          };
+        });
+      setNearbyOffers(mapped);
+    } catch {
+      setAppBusinesses([]);
+      setNearbyOffers([]);
     }
   }, []);
 
@@ -65,17 +172,100 @@ export default function NearbyScreen() {
     (async () => {
       setLoading(true);
       const c = await acquire();
-      if (c) await load(c);
+      if (c) {
+        setCoords(c);
+        await loadSupabaseFeed(c);
+      }
       setLoading(false);
     })();
-  }, [acquire, load]);
+  }, [acquire, loadSupabaseFeed]);
+
+  useEffect(() => {
+    if (!coords) return;
+    let cancel = false;
+    (async () => {
+      try {
+        setError(null);
+        const p = await searchNearbyBusinesses(
+          coords.lat,
+          coords.lng,
+          5000,
+          googleTypesForCategory(selectedCategory),
+        );
+        if (!cancel) setPlaces(p);
+      } catch (e: unknown) {
+        if (!cancel) {
+          setError(
+            e instanceof Error
+              ? e.message
+              : "Failed to load nearby places from Google.",
+          );
+        }
+      }
+    })();
+    return () => {
+      cancel = true;
+    };
+  }, [coords, selectedCategory]);
 
   const onRefresh = useCallback(async () => {
     setRefreshing(true);
+    setError(null);
     const c = coords ?? (await acquire());
-    if (c) await load(c);
+    if (c) {
+      if (!coords) setCoords(c);
+      await loadSupabaseFeed(c);
+      try {
+        const p = await searchNearbyBusinesses(
+          c.lat,
+          c.lng,
+          5000,
+          googleTypesForCategory(selectedCategory),
+        );
+        setPlaces(p);
+      } catch (e: unknown) {
+        setError(
+          e instanceof Error
+            ? e.message
+            : "Failed to load nearby places from Google.",
+        );
+      }
+    }
     setRefreshing(false);
-  }, [coords, acquire, load]);
+  }, [coords, acquire, loadSupabaseFeed, selectedCategory]);
+
+  const filteredOffers = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return nearbyOffers;
+    return nearbyOffers.filter(
+      (o) =>
+        o.headline.toLowerCase().includes(q) ||
+        o.business_name.toLowerCase().includes(q) ||
+        o.business_address.toLowerCase().includes(q),
+    );
+  }, [nearbyOffers, debouncedQuery]);
+
+  const filteredApp = useMemo(() => {
+    const q = debouncedQuery.trim().toLowerCase();
+    if (!q) return appBusinesses;
+    return appBusinesses.filter(
+      (b) =>
+        b.name.toLowerCase().includes(q) || b.address.toLowerCase().includes(q),
+    );
+  }, [appBusinesses, debouncedQuery]);
+
+  const filteredPlaces = useMemo(() => {
+    const q = debouncedQuery.trim();
+    if (!q) return places;
+    return places.filter((p) => placeMatchesSearchQuery(p, q));
+  }, [places, debouncedQuery]);
+
+  const hasRaw =
+    places.length > 0 || nearbyOffers.length > 0 || appBusinesses.length > 0;
+  const hasFiltered =
+    filteredPlaces.length > 0 ||
+    filteredOffers.length > 0 ||
+    filteredApp.length > 0;
 
   if (loading) {
     return (
@@ -130,7 +320,7 @@ export default function NearbyScreen() {
     );
   }
 
-  if (places.length === 0) {
+  if (!hasRaw) {
     return (
       <ScrollView
         contentContainerStyle={styles.center}
@@ -159,11 +349,192 @@ export default function NearbyScreen() {
       refreshControl={
         <RefreshControl refreshing={refreshing} onRefresh={onRefresh} />
       }
+      keyboardShouldPersistTaps="handled"
+      nestedScrollEnabled
     >
-      {places.map((place) => (
+      <View style={styles.searchBox}>
+        <Ionicons name="search" size={20} color={colors.inkSofter} style={styles.searchIcon} />
+        <TextInput
+          style={styles.searchInput}
+          value={searchQuery}
+          onChangeText={setSearchQuery}
+          placeholder="Search offers, places, or addresses"
+          placeholderTextColor={colors.inkSofter}
+          autoCorrect={false}
+          autoCapitalize="none"
+        />
+        {searchQuery.length > 0 && (
+          <Pressable
+            onPress={() => {
+              setSearchQuery("");
+              setDebouncedQuery("");
+            }}
+            hitSlop={8}
+          >
+            <Ionicons name="close-circle" size={20} color={colors.inkSofter} />
+          </Pressable>
+        )}
+      </View>
+
+      <ScrollView
+        horizontal
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.chipRow}
+        style={{ flexGrow: 0 }}
+        nestedScrollEnabled
+      >
+        {PLACE_CATEGORY_CHIPS.map((chip) => {
+          const active = selectedCategory === chip.id;
+          return (
+            <Pressable
+              key={chip.id}
+              onPress={() => setSelectedCategory(chip.id)}
+              style={[styles.chip, active && styles.chipActive]}
+            >
+              <Text style={[styles.chipText, active && styles.chipTextActive]}>
+                {chip.label}
+              </Text>
+            </Pressable>
+          );
+        })}
+      </ScrollView>
+
+      {selectedCategory !== "all" && (
+        <Text style={styles.hintInApp}>
+          Category filters the Google “More places” list. In-app offers and “On
+          Nearby” are still shown; use search to narrow them.
+        </Text>
+      )}
+
+      {hasRaw && !hasFiltered && (
+        <View style={styles.noFilterMatch}>
+          <Ionicons name="search-outline" size={36} color={colors.inkSofter} />
+          <Text style={styles.noFilterTitle}>No matches</Text>
+          <Text style={styles.noFilterBody}>
+            Try clearing search, choosing All, or a different category.
+          </Text>
+          <Pressable
+            style={styles.btn}
+            onPress={() => {
+              setSearchQuery("");
+              setDebouncedQuery("");
+              setSelectedCategory("all");
+            }}
+          >
+            <Text style={styles.btnText}>Reset filters</Text>
+          </Pressable>
+        </View>
+      )}
+
+      {filteredOffers.length > 0 && (
+        <>
+          <Text style={styles.sectionTitle}>Active Offers Near You</Text>
+          {filteredOffers.map((offer) => (
+            <NearbyOfferCard key={offer.id} offer={offer} />
+          ))}
+        </>
+      )}
+
+      {filteredApp.length > 0 && (
+        <>
+          <Text
+            style={[
+              styles.sectionTitle,
+              filteredOffers.length > 0 ? { marginTop: space(2) } : undefined,
+            ]}
+          >
+            On Nearby
+          </Text>
+          <Text style={styles.sectionSub}>
+            Local businesses on the app — including yours when you are in range
+          </Text>
+          {filteredApp.map((b) => (
+            <AppBusinessCard key={b.id} business={b} />
+          ))}
+        </>
+      )}
+
+      {filteredPlaces.length > 0 && (
+        <Text
+          style={[
+            styles.sectionTitle,
+            (filteredOffers.length > 0 || filteredApp.length > 0) ? { marginTop: space(2) } : undefined,
+          ]}
+        >
+          More places (Google Maps)
+        </Text>
+      )}
+      {filteredPlaces.map((place) => (
         <BusinessCard key={place.id} place={place} userCoords={coords} />
       ))}
     </ScrollView>
+  );
+}
+
+function AppBusinessCard({ business }: { business: AppBusiness }) {
+  return (
+    <Pressable
+      style={styles.appBizCard}
+      onPress={() => router.push(`/location/${business.id}` as any)}
+    >
+      {business.cover_image_url ? (
+        <Image
+          source={{ uri: business.cover_image_url }}
+          style={styles.appBizPhoto}
+          resizeMode="cover"
+        />
+      ) : (
+        <View style={styles.appBizPhotoPlaceholder}>
+          <Ionicons name="storefront" size={32} color={colors.accent} />
+        </View>
+      )}
+      <View style={styles.appBizContent}>
+        <View style={styles.cardRow}>
+          <Text style={styles.cardName} numberOfLines={2}>
+            {business.name}
+          </Text>
+          {business.distance_mi != null && (
+            <Text style={styles.cardDistance}>{business.distance_mi.toFixed(1)} mi</Text>
+          )}
+        </View>
+        <View style={styles.nearbyPill}>
+          <Ionicons name="navigate" size={12} color={colors.accent} />
+          <Text style={styles.nearbyPillText}>Nearby merchant</Text>
+        </View>
+        <Text style={styles.cardAddress} numberOfLines={2}>
+          {business.address || "Address on file"}
+        </Text>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.inkSofter} />
+    </Pressable>
+  );
+}
+
+function NearbyOfferCard({ offer }: { offer: NearbyOffer }) {
+  return (
+    <Pressable
+      style={styles.offerCard}
+      onPress={() =>
+        router.push(`/offer-claim/${offer.id}` as any)
+      }
+    >
+      <View style={styles.offerBadge}>
+        <Text style={styles.offerBadgeText}>{offer.discount_pct}% OFF</Text>
+      </View>
+      <View style={styles.offerContent}>
+        <Text style={styles.offerHeadline} numberOfLines={2}>{offer.headline}</Text>
+        <Text style={styles.offerBusiness}>{offer.business_name}</Text>
+        <View style={styles.offerMeta}>
+          {offer.distance_mi != null && (
+            <Text style={styles.offerDistance}>{offer.distance_mi.toFixed(1)} mi</Text>
+          )}
+          <Text style={styles.offerExpiry}>
+            Expires {new Date(offer.expires_at).toLocaleDateString()}
+          </Text>
+        </View>
+      </View>
+      <Ionicons name="chevron-forward" size={20} color={colors.inkSofter} />
+    </Pressable>
   );
 }
 
@@ -284,6 +655,61 @@ const styles = StyleSheet.create({
     lineHeight: 20,
     paddingHorizontal: space(4),
   },
+  searchBox: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    borderRadius: radius.lg,
+    paddingHorizontal: space(3),
+    paddingVertical: space(1.5),
+    gap: space(2),
+  },
+  searchIcon: { marginRight: 2 },
+  searchInput: {
+    flex: 1,
+    fontSize: 16,
+    color: colors.ink,
+    paddingVertical: space(1),
+  },
+  chipRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: space(2),
+    paddingVertical: space(1),
+  },
+  chip: {
+    backgroundColor: colors.card,
+    borderWidth: 1,
+    borderColor: colors.border,
+    paddingVertical: space(1.5),
+    paddingHorizontal: space(3),
+    borderRadius: radius.pill,
+  },
+  chipActive: {
+    backgroundColor: colors.accent,
+    borderColor: colors.accent,
+  },
+  chipText: { color: colors.ink, fontSize: 13, fontWeight: "600" },
+  chipTextActive: { color: "#fff" },
+  hintInApp: {
+    color: colors.inkSofter,
+    fontSize: 12,
+    lineHeight: 18,
+  },
+  noFilterMatch: {
+    alignItems: "center",
+    paddingVertical: space(4),
+    gap: space(2),
+  },
+  noFilterTitle: { color: colors.ink, fontSize: 17, fontWeight: "700" },
+  noFilterBody: {
+    color: colors.inkSofter,
+    fontSize: 14,
+    textAlign: "center",
+    lineHeight: 20,
+  },
   btn: {
     backgroundColor: colors.accent,
     paddingVertical: space(2.5),
@@ -294,6 +720,75 @@ const styles = StyleSheet.create({
     gap: space(2),
   },
   btnText: { color: "white", fontWeight: "600" },
+  sectionTitle: {
+    color: colors.ink,
+    fontSize: 17,
+    fontWeight: "700",
+  },
+  sectionSub: {
+    color: colors.inkSofter,
+    fontSize: 13,
+    lineHeight: 18,
+    marginTop: 2,
+    marginBottom: space(1),
+  },
+  appBizCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 1,
+    borderColor: colors.border,
+    overflow: "hidden",
+    gap: 0,
+  },
+  appBizPhoto: { width: 100, height: 100 },
+  appBizPhotoPlaceholder: {
+    width: 100,
+    height: 100,
+    backgroundColor: colors.accentSoft,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  appBizContent: { flex: 1, padding: space(3), gap: space(1) },
+  nearbyPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    alignSelf: "flex-start",
+    backgroundColor: colors.accentSoft,
+    paddingHorizontal: space(2),
+    paddingVertical: 2,
+    borderRadius: radius.pill,
+  },
+  nearbyPillText: { color: colors.accent, fontSize: 11, fontWeight: "600" },
+  // Nearby offer cards
+  offerCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    backgroundColor: colors.card,
+    borderRadius: radius.lg,
+    borderWidth: 2,
+    borderColor: colors.accent,
+    padding: space(4),
+    gap: space(3),
+  },
+  offerBadge: {
+    backgroundColor: colors.accent,
+    borderRadius: radius.md,
+    paddingHorizontal: space(2.5),
+    paddingVertical: space(2),
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  offerBadgeText: { color: "#fff", fontSize: 14, fontWeight: "800" },
+  offerContent: { flex: 1, gap: 2 },
+  offerHeadline: { color: colors.ink, fontSize: 15, fontWeight: "700", lineHeight: 20 },
+  offerBusiness: { color: colors.inkSoft, fontSize: 13, fontWeight: "500" },
+  offerMeta: { flexDirection: "row", gap: space(3), marginTop: 2 },
+  offerDistance: { color: colors.inkSofter, fontSize: 12 },
+  offerExpiry: { color: colors.inkSofter, fontSize: 12 },
+  // Business cards
   card: {
     backgroundColor: colors.card,
     borderRadius: radius.lg,

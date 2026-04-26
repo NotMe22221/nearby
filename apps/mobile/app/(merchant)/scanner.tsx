@@ -9,7 +9,7 @@ import {
 } from "react-native";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import * as Haptics from "expo-haptics";
-import { api } from "@/lib/api";
+import { supabase } from "@/lib/supabase";
 import { colors, radius, space } from "@/lib/theme";
 
 export default function MerchantScanner() {
@@ -26,18 +26,32 @@ export default function MerchantScanner() {
   }, [permission, requestPermission]);
 
   async function submit(payload: string, method: "qr" | "code") {
-    if (busy) return;
+    if (busy || !supabase) return;
     if (lastScannedRef.current === payload) return;
     lastScannedRef.current = payload;
     setBusy(true);
     try {
-      const r =
-        method === "qr"
-          ? await api.merchantRedeem({ payload, method })
-          : await api.merchantRedeem({ code: payload, method });
+      let redeemCode = payload.trim();
+
+      // If QR payload is JSON, extract the code from it
+      if (redeemCode.startsWith("{")) {
+        try {
+          const obj = JSON.parse(redeemCode);
+          if (obj.code) redeemCode = obj.code;
+        } catch { /* use raw */ }
+      }
+
+      const { data, error } = await supabase.rpc("redeem_offer_by_code", {
+        p_code: redeemCode,
+      });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       setLast(
-        `Redeemed · ${r.discount_pct}% off${r.already ? " (already)" : ""}`,
+        `Redeemed · ${data?.discount_pct ?? 0}% off (${data?.redemptions_count ?? 0}/${data?.max_redemptions ?? 0} used)`,
       );
     } catch (e: unknown) {
       Haptics.notificationAsync(Haptics.NotificationFeedbackType.Error);
@@ -88,14 +102,14 @@ export default function MerchantScanner() {
             value={code}
             onChangeText={setCode}
             autoCapitalize="characters"
-            placeholder="ABCD-1234"
+            placeholder="e.g. 49952973"
             placeholderTextColor={colors.inkSofter}
             style={styles.input}
           />
           <Pressable
             style={styles.btn}
             disabled={busy || !code}
-            onPress={() => submit(code.trim().toUpperCase(), "code")}
+            onPress={() => submit(code.trim(), "code")}
           >
             <Text style={styles.btnText}>Apply</Text>
           </Pressable>
@@ -136,7 +150,7 @@ const styles = StyleSheet.create({
     borderRadius: radius.md,
     paddingHorizontal: space(3),
     paddingVertical: space(3),
-    fontFamily: "Menlo",
+    fontFamily: "monospace",
     letterSpacing: 2,
   },
   btn: {

@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
 import { apiBaseUrl } from "@/lib/config";
+import { resolveOrganizationId } from "@/lib/merchantOrg";
 import { colors, radius, space } from "@/lib/theme";
 
 type SquareConnection = { id: string; merchant_id: string; connected_at: string };
@@ -41,9 +42,8 @@ export default function PosScreen() {
     if (!supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data: mem } = await supabase.from("memberships").select("organization_id").eq("user_id", user.id).limit(1);
-    if (!mem?.length) { setLoading(false); return; }
-    const oid = mem[0].organization_id;
+    const oid = await resolveOrganizationId(supabase);
+    if (!oid) { setLoading(false); return; }
     setOrgId(oid);
 
     const { data: locs } = await supabase.from("locations").select("id").eq("organization_id", oid).order("created_at", { ascending: true }).limit(1);
@@ -73,10 +73,12 @@ export default function PosScreen() {
 
   async function disconnect() {
     if (!supabase || !connection) return;
+    const client = supabase;
+    const connId = connection.id;
     Alert.alert("Disconnect Square", "Are you sure?", [
       { text: "Cancel", style: "cancel" },
       { text: "Disconnect", style: "destructive", onPress: async () => {
-        await supabase.from("square_connections").delete().eq("id", connection.id);
+        await client.from("square_connections").delete().eq("id", connId);
         setConnection(null);
       }},
     ]);
@@ -108,11 +110,7 @@ export default function PosScreen() {
         ) : (
           <Pressable style={s.connectBtn} onPress={() => {
             const url = `${apiBaseUrl}/api/square/oauth/start?org_id=${orgId}`;
-            if (apiBaseUrl.includes("localhost") || apiBaseUrl.includes("10.0.")) {
-              Alert.alert("Square OAuth", "Square Connect requires the web dashboard to be running. Start your Next.js server and try again, or connect via the web dashboard.");
-            } else {
-              Linking.openURL(url);
-            }
+            Linking.openURL(url);
           }}>
             <Text style={s.connectBtnText}>Connect</Text>
           </Pressable>

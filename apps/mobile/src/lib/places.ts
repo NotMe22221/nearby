@@ -59,10 +59,55 @@ const DETAIL_FIELD_MASK = [
   "photos",
 ].join(",");
 
+/** Google Places (New) place types for nearby search — default bundle. */
+export const DEFAULT_GOOGLE_PLACE_TYPES: string[] = [
+  "restaurant",
+  "cafe",
+  "bakery",
+  "bar",
+  "store",
+];
+
+export type PlaceCategoryId =
+  | "all"
+  | "coffee"
+  | "bakery"
+  | "bar"
+  | "restaurant"
+  | "store";
+
+export const PLACE_CATEGORY_CHIPS: { id: PlaceCategoryId; label: string }[] = [
+  { id: "all", label: "All" },
+  { id: "coffee", label: "Coffee" },
+  { id: "bakery", label: "Bakery" },
+  { id: "bar", label: "Bar" },
+  { id: "restaurant", label: "Restaurants" },
+  { id: "store", label: "Grocery" },
+];
+
+/** Map UI chip to Google `includedTypes` (nearby). "all" = default mix. */
+export function googleTypesForCategory(id: PlaceCategoryId): string[] {
+  if (id === "all") return DEFAULT_GOOGLE_PLACE_TYPES;
+  const map: Record<Exclude<PlaceCategoryId, "all">, string[]> = {
+    coffee: ["cafe", "coffee_shop"],
+    bakery: ["bakery"],
+    bar: ["bar"],
+    restaurant: [
+      "restaurant",
+      "fast_food_restaurant",
+      "pizza_restaurant",
+      "meal_takeaway",
+    ],
+    store: ["store", "grocery_store"],
+  };
+  return map[id] ?? DEFAULT_GOOGLE_PLACE_TYPES;
+}
+
 export async function searchNearbyBusinesses(
   lat: number,
   lng: number,
   radiusMeters = 5000,
+  includedTypes: string[] = DEFAULT_GOOGLE_PLACE_TYPES,
 ): Promise<Place[]> {
   if (!googlePlacesApiKey) return [];
 
@@ -74,7 +119,7 @@ export async function searchNearbyBusinesses(
       "X-Goog-FieldMask": FIELD_MASK,
     },
     body: JSON.stringify({
-      includedTypes: ["restaurant", "cafe", "bakery", "bar", "store"],
+      includedTypes: includedTypes.length > 0 ? includedTypes : DEFAULT_GOOGLE_PLACE_TYPES,
       locationRestriction: {
         circle: {
           center: { latitude: lat, longitude: lng },
@@ -135,6 +180,38 @@ const TYPE_LABELS: Record<string, string> = {
 export function formatType(primaryType?: string): string {
   if (!primaryType) return "Business";
   return TYPE_LABELS[primaryType] ?? primaryType.replace(/_/g, " ").replace(/\b\w/g, (c) => c.toUpperCase());
+}
+
+/**
+ * In-memory text filter for Google `Place` rows (Nearby tab).
+ */
+export function placeMatchesSearchQuery(place: Place, query: string): boolean {
+  const q = query.trim().toLowerCase();
+  if (!q) return true;
+  const name = place.displayName?.text?.toLowerCase() ?? "";
+  const addr = place.formattedAddress?.toLowerCase() ?? "";
+  const typeL = formatType(place.primaryType).toLowerCase();
+  return name.includes(q) || addr.includes(q) || typeL.includes(q);
+}
+
+/**
+ * Heuristic for web (no Google types on cards): if chip ≠ "all", keep rows whose
+ * text matches at least one hint for that category.
+ */
+const WEB_CATEGORY_HINTS: Record<PlaceCategoryId, string[] | null> = {
+  all: null,
+  coffee: ["coffee", "cafe", "espresso", "latte", "mocha", "roast"],
+  bakery: ["baker", "baked", "donut", "donuts", "pastry", "croissant", "bagel", "dough"],
+  bar: ["bar", "pub", "brewery", "wine", "taproom", "cocktail"],
+  restaurant: ["restaurant", "bistro", "diner", "grill", "kitchen", "taco", "pizza", "sushi", "eat"],
+  store: ["market", "grocery", "shop", "retail", "convenience", "mart", "foods"],
+};
+
+export function webFeedTextMatchesCategory(id: PlaceCategoryId, textLower: string): boolean {
+  if (id === "all") return true;
+  const hints = WEB_CATEGORY_HINTS[id];
+  if (!hints?.length) return true;
+  return hints.some((h) => textLower.includes(h));
 }
 
 const TYPE_OFFERS: Record<string, string[]> = {

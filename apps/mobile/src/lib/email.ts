@@ -9,16 +9,33 @@ function generateCode(): string {
   return code;
 }
 
+export type SendClaimEmailResult = {
+  /** Always set — this is the code the customer should use (or your explicit redemption code). */
+  code: string;
+  /** Whether Resend reported success. */
+  emailSent: boolean;
+  error?: string;
+};
+
+/**
+ * Send claim confirmation email. Always returns a real `code` (never placeholder),
+ * so the wallet and UI can show it even if email fails.
+ * Pass `redemptionCode` for Supabase offers so the email matches the merchant’s offer code.
+ */
 export async function sendClaimEmail(
   to: string,
   customerName: string,
   businessName: string,
   offerHeadline: string,
-): Promise<{ ok: true; code: string } | { ok: false; error: string }> {
-  const code = generateCode();
+  options?: { redemptionCode?: string },
+): Promise<SendClaimEmailResult> {
+  const code =
+    options?.redemptionCode && options.redemptionCode.trim()
+      ? options.redemptionCode.trim()
+      : generateCode();
 
   if (!resendApiKey || resendApiKey === "REPLACE_WITH_YOUR_RESEND_API_KEY") {
-    return { ok: true, code };
+    return { code, emailSent: false, error: "Resend not configured" };
   }
 
   try {
@@ -60,13 +77,18 @@ export async function sendClaimEmail(
 
     if (!res.ok) {
       const body = await res.text();
-      return { ok: false, error: `Email failed (${res.status}): ${body}` };
+      return {
+        code,
+        emailSent: false,
+        error: `Email failed (${res.status}): ${body}`,
+      };
     }
 
-    return { ok: true, code };
+    return { code, emailSent: true };
   } catch (err) {
     return {
-      ok: false,
+      code,
+      emailSent: false,
       error: err instanceof Error ? err.message : "Email send failed.",
     };
   }

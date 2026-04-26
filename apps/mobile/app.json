@@ -69,6 +69,12 @@
         }
       ],
       [
+        "expo-image-picker",
+        {
+          "photosPermission": "Nearby needs access to your photos to set a store or location cover image."
+        }
+      ],
+      [
         "@stripe/stripe-react-native",
         {
           "merchantIdentifier": "merchant.com.citywallet.app",
@@ -81,12 +87,12 @@
       "router": {
         "origin": false
       },
-      "apiBaseUrl": "http://10.0.0.10:3000",
+      "apiBaseUrl": "https://nearby-app-rust.vercel.app",
       "supabaseUrl": "https://kljabbvlkcnnnnslijfg.supabase.co",
-      "supabaseAnonKey": "sb_publishable_OPxmyQpDOvNQZrF-OO8AxA_igX1rPH5",
-      "stripePublishableKey": "pk_live_51QmjF5RutEh7PyS1zd2qIT3Um0ZNtn1SYCq1sKLBumbG1qOiqFh9BIK8rONkHIlldJ0IsILfUJ3wlJtM2qwVfcWt00onuG9vAa",
-      "googlePlacesApiKey": "AIzaSyD2BOWaKp7Bl72egN5Bf_HQWsI-Uz38X1Y",
-      "resendApiKey": "re_GHRdAq5W_FYz5nPKmYGWsvMY1oTqUqaKc",
+      "supabaseAnonKey": "REPLACE_WITH_SUPABASE_ANON_KEY",
+      "stripePublishableKey": "REPLACE_WITH_STRIPE_PUBLISHABLE_KEY",
+      "googlePlacesApiKey": "REPLACE_WITH_GOOGLE_PLACES_API_KEY",
+      "resendApiKey": "REPLACE_WITH_RESEND_API_KEY",
       "eas": {
         "projectId": "ad3990cd-6cab-4d3d-879c-eb09e4525bba"
       }

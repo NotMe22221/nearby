@@ -60,6 +60,10 @@ npm run typecheck          # tsc --noEmit across workspaces
    4. `db/migrations/4_stripe.sql`
    5. `db/migrations/5_square.sql`
    6. `db/migrations/6_devices.sql`
+   7. `db/migrations/7_fix_memberships_rls.sql` (if you ever hit RLS recursion on `memberships`, run this)
+   8. `db/migrations/8_publish_offers.sql`
+   9. `db/migrations/9_customer_claims.sql` (required for **Customer sign-ups** / `offer_customer_claims`)
+   10. `db/migrations/10_location_cover_photos.sql` (location cover images + `locations_nearby` updates)
 3. Enable **Email** auth (and disable email confirmation for demo speed).
 4. (Optional) Create a Database Webhook on `public.offers` (insert) that POSTs to the Edge Function `notify_nearby_on_offer_create`.
 

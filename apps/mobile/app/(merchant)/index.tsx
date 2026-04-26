@@ -16,10 +16,17 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
+import { geocodeAddress } from "@/lib/geocode";
+import {
+  listMerchantOrganizations,
+  resolveOrganizationId,
+  selectNewOrganization,
+} from "@/lib/merchantOrg";
 import { colors, radius, space } from "@/lib/theme";
 
 type OrgData = {
   orgName: string;
+  orgId: string;
   locationCount: number;
   activeOffers: number;
   todayRedemptions: number;
@@ -34,7 +41,7 @@ type ManagementCard = {
 };
 
 const CARDS: ManagementCard[] = [
-  { title: "Business Profile", icon: "storefront-outline", route: "/merchant-screens/setup", description: "Name, address, slow hours", color: "#2563EB" },
+  { title: "Business Profile", icon: "storefront-outline", route: "/merchant-screens/setup", description: "Name, address, slow hours, photo", color: "#2563EB" },
   { title: "Locations", icon: "location-outline", route: "/merchant-screens/locations", description: "Manage your locations", color: "#7C3AED" },
   { title: "Menu Items", icon: "restaurant-outline", route: "/merchant-screens/items", description: "Products and pricing", color: "#059669" },
   { title: "Offer Rules", icon: "pricetag-outline", route: "/merchant-screens/rules", description: "Discounts and promotions", color: "#D97706" },
@@ -49,10 +56,12 @@ export default function MerchantDashboard() {
   const insets = useSafeAreaInsets();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState<OrgData | null>(null);
+  const [allOrgs, setAllOrgs] = useState<{ id: string; name: string }[]>([]);
   const [refreshing, setRefreshing] = useState(false);
   const [userName, setUserName] = useState("");
   const [newBizModal, setNewBizModal] = useState(false);
   const [newBizName, setNewBizName] = useState("");
+  const [newBizAddress, setNewBizAddress] = useState("");
 
   const load = useCallback(async () => {
     if (!supabase) return;
@@ -61,19 +70,19 @@ export default function MerchantDashboard() {
       if (!user) return;
       setUserName(user.email ?? "Merchant");
 
-      const { data: memberships } = await supabase
-        .from("memberships")
-        .select("organization_id, organizations(name)")
-        .eq("user_id", user.id)
-        .limit(1);
-
-      if (!memberships || memberships.length === 0) {
+      const orgs = await listMerchantOrganizations(supabase);
+      setAllOrgs(orgs);
+      if (orgs.length === 0) {
         setData(null);
         return;
       }
 
-      const orgId = memberships[0].organization_id;
-      const orgName = (memberships[0] as any).organizations?.name ?? "My Business";
+      const orgId = await resolveOrganizationId(supabase);
+      if (!orgId) {
+        setData(null);
+        return;
+      }
+      const current = orgs.find((o) => o.id === orgId) ?? orgs[0];
 
       const { count: locationCount } = await supabase
         .from("locations").select("id", { count: "exact", head: true }).eq("organization_id", orgId);
@@ -81,7 +90,7 @@ export default function MerchantDashboard() {
       const { data: locations } = await supabase
         .from("locations").select("id").eq("organization_id", orgId);
 
-      const locationIds = locations?.map((l: any) => l.id) ?? [];
+      const locationIds = locations?.map((l: { id: string }) => l.id) ?? [];
 
       let activeOffers = 0;
       let todayRedemptions = 0;
@@ -92,14 +101,29 @@ export default function MerchantDashboard() {
           .from("offers").select("id", { count: "exact", head: true }).in("location_id", locationIds).gte("expires_at", now);
         activeOffers = offersCount ?? 0;
 
-        const todayStart = new Date();
-        todayStart.setHours(0, 0, 0, 0);
-        const { count: redemptionsCount } = await supabase
-          .from("redemptions").select("id", { count: "exact", head: true }).in("location_id", locationIds).gte("redeemed_at", todayStart.toISOString());
-        todayRedemptions = redemptionsCount ?? 0;
+        const { data: offerRows } = await supabase
+          .from("offers").select("id").in("location_id", locationIds);
+        const offerIds = offerRows?.map((o: { id: string }) => o.id) ?? [];
+
+        if (offerIds.length > 0) {
+          const todayStart = new Date();
+          todayStart.setHours(0, 0, 0, 0);
+          const { count: redemptionsCount } = await supabase
+            .from("redemptions")
+            .select("id", { count: "exact", head: true })
+            .in("offer_id", offerIds)
+            .gte("redeemed_at", todayStart.toISOString());
+          todayRedemptions = redemptionsCount ?? 0;
+        }
       }
 
-      setData({ orgName, locationCount: locationCount ?? 0, activeOffers, todayRedemptions });
+      setData({
+        orgName: current.name,
+        orgId: orgId,
+        locationCount: locationCount ?? 0,
+        activeOffers,
+        todayRedemptions,
+      });
     } catch {
       // non-fatal
     } finally {
@@ -109,23 +133,46 @@ export default function MerchantDashboard() {
 
   useFocusEffect(useCallback(() => { load(); }, [load]));
 
+  async function switchOrg(orgId: string) {
+    if (!supabase) return;
+    await selectNewOrganization(orgId);
+    setLoading(true);
+    await load();
+  }
+
   function createNewBusiness() {
     setNewBizName("");
+    setNewBizAddress("");
     setNewBizModal(true);
   }
 
   async function doCreateBusiness() {
     if (!supabase || !newBizName.trim()) { Alert.alert("Required", "Enter a business name."); return; }
+    if (!newBizAddress.trim()) { Alert.alert("Location Required", "Your business address is essential for customers to find you. Please enter your address."); return; }
     try {
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       const { data: newOrg, error: orgErr } = await supabase.rpc("create_new_business", { p_name: newBizName.trim() });
       if (orgErr) { Alert.alert("Error", orgErr.message); return; }
+      if (newOrg?.org_id) {
+        await selectNewOrganization(newOrg.org_id as string);
+      }
+      if (newOrg?.location_id) {
+        await supabase.from("locations").update({ address: newBizAddress.trim() }).eq("id", newOrg.location_id);
+        const coords = await geocodeAddress(newBizAddress.trim());
+        if (coords) {
+          await supabase.rpc("update_location_coords", {
+            p_location_id: newOrg.location_id,
+            p_lat: coords.lat,
+            p_lng: coords.lng,
+          });
+        }
+      }
       setNewBizModal(false);
-      Alert.alert("Created", `"${newBizName.trim()}" created. Go to Business Profile to finish setup.`);
+      Alert.alert("Created", `"${newBizName.trim()}" is now your active business. Add a photo in Business Profile so it stands out!`);
       load();
-    } catch (e: any) {
-      Alert.alert("Error", e.message);
+    } catch (e: unknown) {
+      Alert.alert("Error", e instanceof Error ? e.message : "Failed");
     }
   }
 
@@ -166,6 +213,21 @@ export default function MerchantDashboard() {
           <Ionicons name="storefront" size={28} color={colors.accent} />
         </View>
         <Text style={s.orgName}>{data.orgName}</Text>
+        {allOrgs.length > 1 && (
+          <View style={s.orgSwitch}>
+            {allOrgs.map((o) => (
+              <Pressable
+                key={o.id}
+                onPress={() => o.id !== data.orgId && switchOrg(o.id)}
+                style={[s.orgChip, o.id === data.orgId && s.orgChipActive]}
+              >
+                <Text numberOfLines={1} style={[s.orgChipText, o.id === data.orgId && s.orgChipTextActive]}>
+                  {o.name}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
+        )}
         <Text style={s.greeting}>Welcome back, {userName}</Text>
       </View>
 
@@ -199,12 +261,15 @@ export default function MerchantDashboard() {
         </Pressable>
       </View>
 
-      <Modal visible={newBizModal} animationType="slide" transparent>
+      <Modal visible={newBizModal} animationType="slide" transparent onRequestClose={() => setNewBizModal(false)}>
         <View style={s.modalOverlay}>
           <View style={[s.modal, { paddingBottom: space(5) + insets.bottom }]}>
             <Text style={s.modalTitle}>New Business</Text>
             <Text style={s.modalLabel}>Business Name</Text>
             <TextInput style={s.modalInput} value={newBizName} onChangeText={setNewBizName} placeholder="e.g. My Restaurant" placeholderTextColor={colors.inkSofter} autoFocus />
+            <Text style={s.modalLabel}>Business Address *</Text>
+            <TextInput style={s.modalInput} value={newBizAddress} onChangeText={setNewBizAddress} placeholder="e.g. 123 Main St, City, State" placeholderTextColor={colors.inkSofter} multiline />
+            <Text style={s.modalHint}>Your address is how nearby customers discover you. The new business becomes active immediately.</Text>
             <View style={s.modalActions}>
               <Pressable onPress={() => setNewBizModal(false)} style={s.modalCancelBtn}><Text style={s.modalCancelText}>Cancel</Text></Pressable>
               <Pressable onPress={doCreateBusiness} style={s.modalCreateBtn}><Text style={s.modalCreateText}>Create</Text></Pressable>
@@ -232,7 +297,12 @@ const s = StyleSheet.create({
   hero: { alignItems: "center", gap: space(1), paddingVertical: space(4) },
   avatarCircle: { width: 64, height: 64, borderRadius: 32, backgroundColor: colors.accentSoft, alignItems: "center", justifyContent: "center", marginBottom: space(1) },
   orgName: { color: colors.ink, fontSize: 22, fontWeight: "800" },
-  greeting: { color: colors.inkSoft, fontSize: 14 },
+  orgSwitch: { flexDirection: "row", flexWrap: "wrap", justifyContent: "center", gap: space(2), maxWidth: "100%" as any, marginTop: space(2) },
+  orgChip: { maxWidth: 160, paddingVertical: space(1.5), paddingHorizontal: space(2.5), borderRadius: radius.pill, borderWidth: 1, borderColor: colors.border, backgroundColor: colors.card },
+  orgChipActive: { borderColor: colors.accent, backgroundColor: colors.accentSoft },
+  orgChipText: { color: colors.inkSoft, fontSize: 12, fontWeight: "600" },
+  orgChipTextActive: { color: colors.accent },
+  greeting: { color: colors.inkSoft, fontSize: 14, marginTop: space(1) },
   statsGrid: { flexDirection: "row", flexWrap: "wrap", gap: space(3) },
   stat: { width: "47%" as any, backgroundColor: colors.card, borderRadius: radius.lg, borderWidth: 1, borderColor: colors.border, padding: space(4), alignItems: "center", gap: space(1) },
   statValue: { color: colors.ink, fontSize: 28, fontWeight: "800" },
@@ -263,4 +333,5 @@ const s = StyleSheet.create({
   modalCancelText: { color: colors.inkSoft, fontWeight: "600" },
   modalCreateBtn: { flex: 1, paddingVertical: space(3), alignItems: "center", borderRadius: radius.pill, backgroundColor: colors.accent },
   modalCreateText: { color: "#fff", fontWeight: "700" },
+  modalHint: { color: colors.inkSofter, fontSize: 12, lineHeight: 16 },
 });

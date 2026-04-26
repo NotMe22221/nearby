@@ -14,6 +14,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { supabase } from "@/lib/supabase";
+import { resolveOrganizationId } from "@/lib/merchantOrg";
 import { colors, radius, space } from "@/lib/theme";
 
 type StampCard = { id: string; name: string; stamps_required: number; reward_text: string; active: boolean };
@@ -38,9 +39,8 @@ export default function LoyaltyScreen() {
     if (!supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data: mem } = await supabase.from("memberships").select("organization_id").eq("user_id", user.id).limit(1);
-    if (!mem?.length) { setLoading(false); return; }
-    const oid = mem[0].organization_id;
+    const oid = await resolveOrganizationId(supabase);
+    if (!oid) { setLoading(false); return; }
     setOrgId(oid);
     const { data: sc } = await supabase.from("stamp_cards").select("*").eq("organization_id", oid).order("created_at", { ascending: false });
     setCards((sc ?? []) as StampCard[]);

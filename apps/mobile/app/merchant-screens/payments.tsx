@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   FlatList,
   Linking,
   Pressable,
@@ -12,6 +11,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { supabase } from "@/lib/supabase";
 import { apiBaseUrl } from "@/lib/config";
+import { resolveOrganizationId } from "@/lib/merchantOrg";
 import { colors, radius, space } from "@/lib/theme";
 
 type Payment = { id: string; amount: number; currency: string; status: string; created_at: string };
@@ -27,9 +27,8 @@ export default function PaymentsScreen() {
     if (!supabase) return;
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return;
-    const { data: mem } = await supabase.from("memberships").select("organization_id").eq("user_id", user.id).limit(1);
-    if (!mem?.length) { setLoading(false); return; }
-    const oid = mem[0].organization_id;
+    const oid = await resolveOrganizationId(supabase);
+    if (!oid) { setLoading(false); return; }
     setOrgId(oid);
     const { data: org } = await supabase.from("organizations").select("stripe_account_id, stripe_charges_enabled").eq("id", oid).single();
     if (org) {
@@ -60,11 +59,7 @@ export default function PaymentsScreen() {
             style={s.connectBtn}
             onPress={() => {
               const url = `${apiBaseUrl}/api/stripe/connect/start?org_id=${orgId}`;
-              if (apiBaseUrl.includes("localhost") || apiBaseUrl.includes("10.0.")) {
-                Alert.alert("Stripe Connect", "Stripe Connect requires the web dashboard to be running. Start your Next.js server and try again, or connect via the web dashboard.");
-              } else {
-                Linking.openURL(url);
-              }
+              Linking.openURL(url);
             }}
           >
             <Text style={s.connectBtnText}>Connect</Text>

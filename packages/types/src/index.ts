@@ -154,6 +154,7 @@ export type NearbyLocationRow = {
   lat: number;
   lng: number;
   slow_hours: SlowHour[];
+  cover_image_url?: string | null;
   distance_km: number;
 };
 
